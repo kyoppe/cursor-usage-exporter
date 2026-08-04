@@ -45,7 +45,8 @@ Uninstall: `python3 scripts/cursor-install.py uninstall`, then Reload Window.
 DD_API_KEY: "your-datadog-api-key"
 DD_SITE: datadoghq.com
 METRIC_PREFIX: "your_namespace."
-# CONVERSATION_ID_TAG: true  # optional; see Tags below
+# CONVERSATION_ID_TAG: true       # optional; see Tags below
+# CONVERSATION_START_EVENTS: true # optional; Datadog Event per new chat; see below
 ```
 
 Environment variables override the file. Changing config does not require Reload Window.

@@ -45,7 +45,8 @@ sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600)
 DD_API_KEY: "your-datadog-api-key"
 DD_SITE: datadoghq.com
 METRIC_PREFIX: "your_namespace."
-# CONVERSATION_ID_TAG: true  # 任意; Tags を参照
+# CONVERSATION_ID_TAG: true       # 任意; Tags を参照
+# CONVERSATION_START_EVENTS: true # 任意; 新規 Chat ごとに Datadog Event; 下記参照
 ```
 
 環境変数はファイルより優先されます。設定変更後に Reload Window は不要です。
