@@ -45,6 +45,7 @@ Uninstall: `python3 scripts/cursor-install.py uninstall`, then Reload Window.
 DD_API_KEY: "your-datadog-api-key"
 DD_SITE: datadoghq.com
 METRIC_PREFIX: "your_namespace."
+# CONVERSATION_ID_TAG: true  # optional; see Tags below
 ```
 
 Environment variables override the file. Changing config does not require Reload Window.
@@ -85,8 +86,11 @@ cumsum(sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600))
 | `workspace_id` | Cursor workspace hash |
 | `workspace_name` | `.code-workspace` or folder name, e.g. `_general` |
 | `workspace_kind` | `code_workspace`, `folder`, `unknown` |
+| `conversation_id` | Chat UUID (opt-in: `CONVERSATION_ID_TAG: true`) |
 
 Tag values are slugified (special characters become `_`).
+
+Enabling `CONVERSATION_ID_TAG` adds one tag dimension per chat and increases custom metric cardinality.
 
 ## Dry-run
 
@@ -109,6 +113,8 @@ Under `~/.cursor-usage-exporter/` (created on first hook run): `config.yaml`, `s
 | Heavy | ~100 | ~500 | ~100 |
 
 Datadog bills **unique time series** (metric name + tag set). Example: `(models) x (token_types ~5) x (workspaces)`.
+
+Enabling `CONVERSATION_ID_TAG` adds a per-chat dimension and increases unique time series further (roughly proportional to the number of active chats).
 
 See [Custom Metrics Billing](https://docs.datadoghq.com/account_management/billing/custom_metrics/). With a small number of series, cost is typically cents/month on Pro (allotment-dependent).
 

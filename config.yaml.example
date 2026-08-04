@@ -5,3 +5,6 @@
 DD_API_KEY: "your-datadog-api-key"
 DD_SITE: datadoghq.com
 METRIC_PREFIX: "your_namespace."
+
+# Optional: tag metrics with Cursor chat UUID (increases Datadog cardinality).
+# CONVERSATION_ID_TAG: true

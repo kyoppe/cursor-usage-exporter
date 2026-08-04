@@ -129,9 +129,18 @@ class ExportUsageTests(unittest.TestCase):
             cfg = mod.load_config()
         self.assertEqual(cfg["metric_prefix"], "acme.")
 
+    def test_load_config_conversation_id_tag(self) -> None:
+        mod.CONFIG_YAML.write_text("CONVERSATION_ID_TAG: true\n", encoding="utf-8")
+        with mock.patch.dict(os.environ, {}, clear=True):
+            for key in ("CONVERSATION_ID_TAG",):
+                os.environ.pop(key, None)
+            cfg = mod.load_config()
+        self.assertTrue(cfg["conversation_id_tag"])
+
     def test_build_metric_series_tags(self) -> None:
         payload = {
             "generation_id": "50321a14-134d-4776-9e89-74dff44a6286",
+            "conversation_id": "d72adab7-dd9b-41fa-9fe3-29003f0e4913",
             "model_id": "default",
             "composer_mode": "agent",
             "cursor_version": "3.14.7",
@@ -151,7 +160,7 @@ class ExportUsageTests(unittest.TestCase):
             "workspace_name": "General",
             "workspace_kind": "code_workspace",
         }
-        config = {"metric_prefix": "test."}
+        config = {"metric_prefix": "test.", "conversation_id_tag": False}
         series = mod.build_metric_series(payload, ctx, config)
         by_type = {
             tag.split(":", 1)[1]
@@ -172,6 +181,21 @@ class ExportUsageTests(unittest.TestCase):
         self.assertIn("model_variant:composer-2.5-fast", tags)
         self.assertIn("model_fast:true", tags)
         self.assertIn("cursor_version:3.14.7", tags)
+        self.assertFalse(any(t.startswith("conversation_id:") for t in tags))
+
+    def test_build_metric_series_conversation_id_opt_in(self) -> None:
+        payload = {
+            "conversation_id": "d72adab7-dd9b-41fa-9fe3-29003f0e4913",
+            "input_tokens": 1,
+            "output_tokens": 1,
+        }
+        config = {"metric_prefix": "test.", "conversation_id_tag": True}
+        series = mod.build_metric_series(payload, {}, config)
+        tags = series[0]["tags"]
+        self.assertIn(
+            "conversation_id:d72adab7-dd9b-41fa-9fe3-29003f0e4913",
+            tags,
+        )
 
     def test_enrich_stop_payload_uses_session_cache(self) -> None:
         mod.cache_session_context(
@@ -263,6 +287,7 @@ class ExportUsageTests(unittest.TestCase):
             "dd_api_key": "",
             "dd_site": "datadoghq.com",
             "dry_run": True,
+            "conversation_id_tag": False,
         }
         with mock.patch.object(mod, "load_config", return_value=config):
             with mock.patch.object(mod, "submit_metrics", wraps=mod.submit_metrics) as submit:

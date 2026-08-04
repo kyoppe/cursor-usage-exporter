@@ -82,6 +82,12 @@ def load_config_file() -> dict[str, str]:
     return merged
 
 
+def parse_bool(value: str | None, default: bool = False) -> bool:
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "on"}
+
+
 def load_config() -> dict[str, str]:
     file_cfg = load_config_file()
 
@@ -103,12 +109,16 @@ def load_config() -> dict[str, str]:
         "true",
         "yes",
     }
+    conversation_id_tag = parse_bool(
+        os.environ.get("CONVERSATION_ID_TAG") or file_cfg.get("CONVERSATION_ID_TAG")
+    )
 
     return {
         "metric_prefix": prefix,
         "dd_site": site,
         "dd_api_key": api_key,
         "dry_run": dry_run,
+        "conversation_id_tag": conversation_id_tag,
     }
 
 
@@ -471,6 +481,10 @@ def build_metric_series(
         base_tags.append(f"model_fast:{model_fast}")
     if cursor_version != "unknown":
         base_tags.append(f"cursor_version:{cursor_version}")
+    if config.get("conversation_id_tag"):
+        conversation_id = payload.get("conversation_id") or payload.get("session_id")
+        if conversation_id:
+            base_tags.append(f"conversation_id:{slug_tag(str(conversation_id))}")
 
     series: list[dict[str, Any]] = []
     for token_type, value in tokens.items():

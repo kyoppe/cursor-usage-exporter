@@ -45,6 +45,7 @@ sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600)
 DD_API_KEY: "your-datadog-api-key"
 DD_SITE: datadoghq.com
 METRIC_PREFIX: "your_namespace."
+# CONVERSATION_ID_TAG: true  # 任意; Tags を参照
 ```
 
 環境変数はファイルより優先されます。設定変更後に Reload Window は不要です。
@@ -85,8 +86,11 @@ cumsum(sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600))
 | `workspace_id` | Cursor workspace hash |
 | `workspace_name` | `.code-workspace` またはフォルダ名 (例: `_general`) |
 | `workspace_kind` | `code_workspace`, `folder`, `unknown` |
+| `conversation_id` | Chat UUID (任意: `CONVERSATION_ID_TAG: true`) |
 
 タグ値は slug 化されます (特殊文字は `_` になります)。
+
+`CONVERSATION_ID_TAG` を有効にすると Chat ごとにタグ次元が増え、カスタムメトリクスのカーディナリティが上がります。
 
 ## Dry-run
 
@@ -109,6 +113,8 @@ echo '{"generation_id":"test-1","model_id":"default","input_tokens":100,"output_
 | 多め | ~100 | ~500 | ~100 |
 
 Datadog は **ユニーク時系列** (メトリクス名 + タグセット) で課金します。例: `(models) x (token_types ~5) x (workspaces)`。
+
+`CONVERSATION_ID_TAG` を有効にすると Chat ごとの次元が加わり、ユニーク時系列がさらに増えます (おおよそアクティブな Chat 数に比例)。
 
 [Custom Metrics Billing](https://docs.datadoghq.com/account_management/billing/custom_metrics/) を参照。時系列数が少なければ Pro では通常月額セント程度 (割当次第)。
 
