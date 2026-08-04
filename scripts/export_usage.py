@@ -416,10 +416,7 @@ def _token_field(payload: dict[str, Any], field: str) -> int:
 
 
 def token_points(payload: dict[str, Any]) -> dict[str, int]:
-    """Non-overlapping billing buckets plus total (input + output).
-
-    Hook ``input_tokens`` includes cache hits; do not emit it as its own series.
-    """
+    """Non-overlapping billing buckets; sum across token_type equals input + output."""
     input_tokens = _token_field(payload, "input_tokens")
     output_tokens = _token_field(payload, "output_tokens")
     cache_read = _token_field(payload, "cache_read_tokens")
@@ -428,9 +425,6 @@ def token_points(payload: dict[str, Any]) -> dict[str, int]:
     non_cached = max(0, input_tokens - cache_read - cache_write)
 
     out: dict[str, int] = {}
-    total = input_tokens + output_tokens
-    if total > 0:
-        out["total"] = total
     if non_cached > 0:
         out["non_cached_input"] = non_cached
     if cache_read > 0:

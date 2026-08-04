@@ -44,22 +44,23 @@ class ExportUsageTests(unittest.TestCase):
         mod.MODEL_CACHE = self._orig_model_cache
         self._tmpdir.cleanup()
 
-    def test_token_points_non_overlapping_with_total(self) -> None:
+    def test_token_points_non_overlapping(self) -> None:
         payload = {
             "input_tokens": 541303,
             "output_tokens": 1996,
             "cache_read_tokens": 530400,
             "cache_write_tokens": 0,
         }
+        points = mod.token_points(payload)
         self.assertEqual(
-            mod.token_points(payload),
+            points,
             {
-                "total": 543299,
                 "non_cached_input": 10903,
                 "cache_read": 530400,
                 "output": 1996,
             },
         )
+        self.assertEqual(sum(points.values()), 541303 + 1996)
 
     def test_token_points_skips_zero_and_missing(self) -> None:
         payload = {
@@ -67,14 +68,15 @@ class ExportUsageTests(unittest.TestCase):
             "output_tokens": 0,
             "cache_read_tokens": 50,
         }
+        points = mod.token_points(payload)
         self.assertEqual(
-            mod.token_points(payload),
+            points,
             {
-                "total": 100,
                 "non_cached_input": 50,
                 "cache_read": 50,
             },
         )
+        self.assertEqual(sum(points.values()), 100)
 
     def test_token_points_clamps_negative_non_cached(self) -> None:
         payload = {
@@ -82,14 +84,15 @@ class ExportUsageTests(unittest.TestCase):
             "output_tokens": 2,
             "cache_read_tokens": 3,
         }
+        points = mod.token_points(payload)
         self.assertEqual(
-            mod.token_points(payload),
+            points,
             {
-                "total": 3,
                 "cache_read": 3,
                 "output": 2,
             },
         )
+        self.assertEqual(sum(points.values()), 5)
 
     def test_load_config_env_overrides_file(self) -> None:
         mod.CONFIG_YAML.write_text(
@@ -160,8 +163,8 @@ class ExportUsageTests(unittest.TestCase):
             next(t.split(":", 1)[1] for t in s["tags"] if t.startswith("token_type:")): s["points"][0]["value"]
             for s in series
         }
-        self.assertEqual(by_type, {"total", "non_cached_input", "output"})
-        self.assertEqual(values["total"], 15.0)
+        self.assertEqual(by_type, {"non_cached_input", "output"})
+        self.assertEqual(sum(values.values()), 15.0)
         self.assertEqual(values["non_cached_input"], 10.0)
         self.assertEqual(values["output"], 5.0)
         tags = series[0]["tags"]

@@ -30,8 +30,10 @@ cp config.yaml.example ~/.cursor-usage-exporter/config.yaml
 Datadog Metrics Explorer:
 
 ```text
-sum:your.prefix.cursor.llm.tokens{token_type:total}.rollup(sum, 3600)
+sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600)
 ```
+
+(Sum all `token_type` series; buckets are non-overlapping.)
 
 Uninstall: `python3 scripts/cursor-install.py uninstall`, then Reload Window.
 
@@ -55,9 +57,10 @@ Environment variables override the file. Changing config does not require Reload
 
 ### `token_type`
 
+Non-overlapping buckets. **Volume = sum all `token_type` values** (do not filter to one).
+
 | Value | Meaning |
 |-------|---------|
-| **`total`** | Tokens this turn (`input + output`). Use this for volume. |
 | `non_cached_input` | Input billed at full input rate |
 | `cache_read` | Prompt cache read |
 | `cache_write` | Prompt cache write |
@@ -69,7 +72,7 @@ More queries:
 
 ```text
 sum:your.prefix.cursor.llm.tokens{*} by {token_type}.rollup(sum, 3600)
-cumsum(sum:your.prefix.cursor.llm.tokens{token_type:total}.rollup(sum, 3600))
+cumsum(sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600))
 ```
 
 ### Tags
