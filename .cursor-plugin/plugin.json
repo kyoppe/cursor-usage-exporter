@@ -1,0 +1,35 @@
+{
+  "name": "cursor-usage-exporter",
+  "displayName": "Cursor Usage Exporter",
+  "version": "0.1.0",
+  "description": "Send Cursor Agent token usage to Datadog custom metrics (metrics only, no logs).",
+  "author": {
+    "name": "kyouhei.ohno"
+  },
+  "repository": "https://github.com/kyoppe/cursor-usage-exporter",
+  "license": "MIT",
+  "keywords": ["datadog", "metrics", "usage", "tokens", "hooks"],
+  "hooks": "./hooks/hooks.json",
+  "variables": {
+    "type": "object",
+    "properties": {
+      "DD_API_KEY": {
+        "type": "string",
+        "title": "Datadog API key",
+        "description": "API key for submitting custom metrics (Metrics API v2)."
+      },
+      "DD_SITE": {
+        "type": "string",
+        "title": "Datadog site",
+        "description": "Datadog site hostname (e.g. datadoghq.com, us5.datadoghq.com).",
+        "default": "datadoghq.com"
+      },
+      "METRIC_PREFIX": {
+        "type": "string",
+        "title": "Metric name prefix",
+        "description": "Your Datadog metric namespace prefix (should end with a dot). Example: acme."
+      }
+    },
+    "required": ["DD_API_KEY", "METRIC_PREFIX"]
+  }
+}

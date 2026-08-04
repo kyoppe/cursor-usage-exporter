@@ -1,0 +1,40 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/run-hook.sh\" session-start",
+            "timeout": 5
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "AfterAgentThought": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/run-hook.sh\" after-agent-thought",
+            "timeout": 5
+          }
+        ],
+        "matcher": ""
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"${CLAUDE_PLUGIN_ROOT}/scripts/run-hook.sh\" stop",
+            "timeout": 8
+          }
+        ],
+        "matcher": ""
+      }
+    ]
+  }
+}

@@ -1,0 +1,7 @@
+# Datadog credentials and metric namespace for cursor-usage-exporter.
+# Copy to ~/.cursor-usage-exporter/config.yaml and edit.
+# Environment variables with the same names override this file.
+
+DD_API_KEY: "your-datadog-api-key"
+DD_SITE: datadoghq.com
+METRIC_PREFIX: "your_namespace."
