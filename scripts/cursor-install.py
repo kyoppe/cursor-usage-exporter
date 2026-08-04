@@ -20,7 +20,12 @@ CLAUDE_INSTALLED_PLUGINS_PATH = CLAUDE_HOME_DIR / "plugins" / "installed_plugins
 CLAUDE_SETTINGS_PATH = CLAUDE_HOME_DIR / "settings.json"
 CURSOR_HOOKS_PATH = Path.home() / ".cursor" / "hooks.json"
 MARKETPLACE_NAME = "local"
-USER_HOOK_COMMAND_MARKER = "cursor-usage-exporter@local/scripts/run-hook.sh\" after-agent-thought"
+USER_HOOK_COMMAND_MARKER = "cursor-usage-exporter@local/scripts/run-hook.sh"
+
+USER_HOOKS: tuple[tuple[str, str], ...] = (
+    ("afterAgentThought", "after-agent-thought"),
+    ("beforeSubmitPrompt", "before-submit-prompt"),
+)
 
 INCLUDE = (
     ".cursor-plugin/**/*",
@@ -66,57 +71,76 @@ def save_json(path: Path, data: dict) -> None:
     path.write_text(json.dumps(data, indent=2) + "\n")
 
 
-def user_after_agent_thought_command(key: str) -> str:
+def user_hook_command(key: str, subcommand: str) -> str:
     hook_sh = CURSOR_PLUGINS_PATH / key / "scripts" / "run-hook.sh"
-    return f'bash "{hook_sh}" after-agent-thought >/dev/null 2>&1 || true'
+    return f'bash "{hook_sh}" {subcommand} >/dev/null 2>&1 || true'
 
 
-def is_exporter_after_agent_thought_hook(entry: dict) -> bool:
-    return USER_HOOK_COMMAND_MARKER in str(entry.get("command", ""))
+def is_exporter_user_hook(entry: dict, subcommand: str) -> bool:
+    command = str(entry.get("command", ""))
+    return USER_HOOK_COMMAND_MARKER in command and subcommand in command
 
 
-def install_user_after_agent_thought_hook(key: str) -> None:
-    """Register afterAgentThought in ~/.cursor/hooks.json (plugin hooks do not run for this step)."""
+def install_user_hook(key: str, hook_name: str, subcommand: str) -> None:
     if not CURSOR_HOOKS_PATH.is_file():
         logger.warning(
-            "Skip afterAgentThought user hook: %s not found (model tag will stay unknown)",
+            "Skip %s user hook: %s not found",
+            hook_name,
             CURSOR_HOOKS_PATH,
         )
         return
 
     data = load_json(CURSOR_HOOKS_PATH)
     hooks = data.setdefault("hooks", {})
-    entries = hooks.setdefault("afterAgentThought", [])
-    if any(is_exporter_after_agent_thought_hook(entry) for entry in entries):
-        logger.info("afterAgentThought user hook already registered")
+    entries = hooks.setdefault(hook_name, [])
+    if any(is_exporter_user_hook(entry, subcommand) for entry in entries):
+        logger.info("%s user hook already registered", hook_name)
         return
 
-    entries.append({"command": user_after_agent_thought_command(key), "timeout": 5})
+    entries.append({"command": user_hook_command(key, subcommand), "timeout": 5})
     data.setdefault("version", 1)
     save_json(CURSOR_HOOKS_PATH, data)
-    logger.info("Registered afterAgentThought user hook in %s", CURSOR_HOOKS_PATH)
+    logger.info("Registered %s user hook in %s", hook_name, CURSOR_HOOKS_PATH)
 
 
-def uninstall_user_after_agent_thought_hook() -> None:
+def uninstall_user_hook(hook_name: str, subcommand: str) -> None:
     if not CURSOR_HOOKS_PATH.is_file():
         return
 
     data = load_json(CURSOR_HOOKS_PATH)
     hooks = data.get("hooks", {})
-    entries = hooks.get("afterAgentThought")
+    entries = hooks.get(hook_name)
     if not isinstance(entries, list):
         return
 
-    filtered = [entry for entry in entries if not is_exporter_after_agent_thought_hook(entry)]
+    filtered = [entry for entry in entries if not is_exporter_user_hook(entry, subcommand)]
     if len(filtered) == len(entries):
         return
 
     if filtered:
-        hooks["afterAgentThought"] = filtered
+        hooks[hook_name] = filtered
     else:
-        hooks.pop("afterAgentThought", None)
+        hooks.pop(hook_name, None)
     save_json(CURSOR_HOOKS_PATH, data)
-    logger.info("Removed afterAgentThought user hook from %s", CURSOR_HOOKS_PATH)
+    logger.info("Removed %s user hook from %s", hook_name, CURSOR_HOOKS_PATH)
+
+
+def install_user_hooks(key: str) -> None:
+    for hook_name, subcommand in USER_HOOKS:
+        install_user_hook(key, hook_name, subcommand)
+
+
+def uninstall_user_hooks() -> None:
+    for hook_name, subcommand in USER_HOOKS:
+        uninstall_user_hook(hook_name, subcommand)
+
+
+def install_user_after_agent_thought_hook(key: str) -> None:
+    install_user_hooks(key)
+
+
+def uninstall_user_after_agent_thought_hook() -> None:
+    uninstall_user_hooks()
 
 
 def install() -> None:

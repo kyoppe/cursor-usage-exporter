@@ -131,6 +131,7 @@ class ExportUsageTests(unittest.TestCase):
             "generation_id": "50321a14-134d-4776-9e89-74dff44a6286",
             "model_id": "default",
             "composer_mode": "agent",
+            "cursor_version": "3.14.7",
             "input_tokens": 10,
             "output_tokens": 5,
         }
@@ -139,6 +140,7 @@ class ExportUsageTests(unittest.TestCase):
                 "generation_id": "50321a14-134d-4776-9e89-74dff44a6286-0-lv2l",
                 "model_id": "composer-2.5",
                 "model": "composer-2.5-fast",
+                "model_params": [{"id": "fast", "value": "true"}],
             }
         )
         ctx = {
@@ -164,7 +166,36 @@ class ExportUsageTests(unittest.TestCase):
         self.assertEqual(values["output"], 5.0)
         tags = series[0]["tags"]
         self.assertIn("model:composer-2.5", tags)
-        self.assertIn("source:cursor", tags)
+        self.assertIn("model_variant:composer-2.5-fast", tags)
+        self.assertIn("model_fast:true", tags)
+        self.assertIn("cursor_version:3.14.7", tags)
+
+    def test_enrich_stop_payload_uses_session_cache(self) -> None:
+        mod.cache_session_context(
+            {
+                "conversation_id": "conv-1",
+                "composer_mode": "plan",
+                "cursor_version": "3.14.7",
+                "workspace_roots": ["/tmp"],
+            }
+        )
+        enriched = mod.enrich_stop_payload(
+            {
+                "conversation_id": "conv-1",
+                "generation_id": "gen-1",
+            }
+        )
+        self.assertEqual(enriched["composer_mode"], "plan")
+        self.assertEqual(enriched["cursor_version"], "3.14.7")
+
+    def test_enrich_stop_payload_defaults_agent(self) -> None:
+        enriched = mod.enrich_stop_payload(
+            {
+                "conversation_id": "conv-new",
+                "generation_id": "gen-2",
+            }
+        )
+        self.assertEqual(enriched["composer_mode"], "agent")
 
     def test_resolve_model_uses_after_agent_thought_cache(self) -> None:
         mod.cache_model_from_payload(

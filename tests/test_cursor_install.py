@@ -46,26 +46,31 @@ class CursorInstallHookTests(unittest.TestCase):
         self._tmpdir.cleanup()
 
     def test_install_appends_after_agent_thought_hook(self) -> None:
-        mod.install_user_after_agent_thought_hook("cursor-usage-exporter@local")
+        mod.install_user_hooks("cursor-usage-exporter@local")
         data = json.loads(self.hooks_path.read_text(encoding="utf-8"))
         entries = data["hooks"]["afterAgentThought"]
         self.assertEqual(len(entries), 2)
         self.assertIn("trajectory afterAgentThought", entries[0]["command"])
         self.assertIn("after-agent-thought", entries[1]["command"])
+        prompt_entries = data["hooks"]["beforeSubmitPrompt"]
+        self.assertEqual(len(prompt_entries), 1)
+        self.assertIn("before-submit-prompt", prompt_entries[0]["command"])
 
     def test_install_is_idempotent(self) -> None:
-        mod.install_user_after_agent_thought_hook("cursor-usage-exporter@local")
-        mod.install_user_after_agent_thought_hook("cursor-usage-exporter@local")
+        mod.install_user_hooks("cursor-usage-exporter@local")
+        mod.install_user_hooks("cursor-usage-exporter@local")
         data = json.loads(self.hooks_path.read_text(encoding="utf-8"))
         self.assertEqual(len(data["hooks"]["afterAgentThought"]), 2)
+        self.assertEqual(len(data["hooks"]["beforeSubmitPrompt"]), 1)
 
     def test_uninstall_removes_only_exporter_hook(self) -> None:
-        mod.install_user_after_agent_thought_hook("cursor-usage-exporter@local")
-        mod.uninstall_user_after_agent_thought_hook()
+        mod.install_user_hooks("cursor-usage-exporter@local")
+        mod.uninstall_user_hooks()
         data = json.loads(self.hooks_path.read_text(encoding="utf-8"))
         entries = data["hooks"]["afterAgentThought"]
         self.assertEqual(len(entries), 1)
         self.assertIn("trajectory", entries[0]["command"])
+        self.assertNotIn("beforeSubmitPrompt", data["hooks"])
 
 
 if __name__ == "__main__":

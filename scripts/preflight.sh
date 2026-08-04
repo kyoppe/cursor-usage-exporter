@@ -39,6 +39,14 @@ else
   OK=1
 fi
 
+if [ -f "$HOOKS_JSON" ] && grep -q 'cursor-usage-exporter@local.*before-submit-prompt' "$HOOKS_JSON" 2>/dev/null; then
+  echo "[ok] beforeSubmitPrompt user hook registered in ~/.cursor/hooks.json"
+else
+  echo "[!!] beforeSubmitPrompt user hook missing (composer_mode may stay unknown)"
+  echo "     run: python3 scripts/cursor-install.py install && Reload Window"
+  OK=1
+fi
+
 if [ -f "$CONFIG_YAML" ]; then
   echo "[ok] config file: $CONFIG_YAML"
 elif [ -f "$CONFIG_JSON" ]; then

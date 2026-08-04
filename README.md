@@ -52,13 +52,13 @@ python3 scripts/cursor-install.py uninstall
 # Optional: rm -rf ~/.cursor-usage-exporter
 ```
 
-`uninstall` removes the plugin registration and the `afterAgentThought` line from `~/.cursor/hooks.json`. Local state under `~/.cursor-usage-exporter/` is kept unless you delete it.
+`uninstall` removes the plugin registration and the exporter lines from `~/.cursor/hooks.json` (`afterAgentThought`, `beforeSubmitPrompt`). Local state under `~/.cursor-usage-exporter/` is kept unless you delete it.
 
 ## What `cursor-install.py install` does
 
 1. Copies the plugin to `~/.cursor/plugins/cursor-usage-exporter@local/`
 2. Registers it in `~/.claude/plugins/installed_plugins.json` and enables it
-3. Appends an **`afterAgentThought`** entry to **`~/.cursor/hooks.json`** (required for model resolution on Auto; plugin hooks alone do not run for this step)
+3. Appends **`afterAgentThought`** and **`beforeSubmitPrompt`** entries to **`~/.cursor/hooks.json`** (plugin hooks alone do not run for these steps; needed for Auto model resolution and `composer_mode`)
 
 Other hooks in `~/.cursor/hooks.json` (e.g. Trajectory) are left unchanged.
 
@@ -66,7 +66,7 @@ Other hooks in `~/.cursor/hooks.json` (e.g. Trajectory) are left unchanged.
 
 | Metric | Type | Tags |
 |--------|------|------|
-| `{prefix}cursor.llm.tokens` | count | `model`, `token_type`, `workspace_id`, `workspace_name`, `workspace_kind`, `composer_mode`, `source:cursor` |
+| `{prefix}cursor.llm.tokens` | count | `model`, `model_variant`, `model_fast`, `token_type`, `workspace_id`, `workspace_name`, `workspace_kind`, `composer_mode`, `cursor_version` |
 
 ### `token_type` (non-overlapping)
 
@@ -99,6 +99,40 @@ Example prefix `acme.` -> metric `acme.cursor.llm.tokens`.
 
 On **Auto**, `stop` sends `model_id: default`. The routed model (e.g. `composer-2.5`) appears on **`afterAgentThought`**. The install script registers a user hook to cache that model before metrics are submitted on `stop`.
 
+### `composer_mode`
+
+`stop` does **not** include `composer_mode`. Each turn's mode is cached from **`beforeSubmitPrompt`** (user hook). If the cache is missing, metrics default to `composer_mode:agent` (token usage on `stop` is Agent turns).
+
+### Tag reference
+
+All tag values pass through `slug_tag`: non `[A-Za-z0-9-._]` characters become `_`, max 200 chars.
+
+**Always present** on each submitted series:
+
+| Tag | Source | Possible values |
+|-----|--------|-----------------|
+| `token_type` | Derived from hook token fields | `total`, `non_cached_input`, `cache_read`, `cache_write`, `output` (zero buckets omitted) |
+| `model` | `model_id` on `stop`, or `afterAgentThought` cache on Auto | Cursor model IDs (open set), e.g. `composer-2.5`, `claude-4-opus`; `unknown` if Auto cache miss |
+| `composer_mode` | `beforeSubmitPrompt` cache, default `agent` | `agent`, `plan`, `ask`, `debug`, or future Cursor values (open set) |
+| `workspace_id` | Matched `workspaceStorage/<hash>/` dir name | 32-char hex hash, e.g. `46e45349c2eef2db8c1453bdfe5c6be6`; `unknown` if match fails |
+| `workspace_name` | `.code-workspace` stem or folder basename | Per workspace (open set), e.g. `_General` (emoji slugified), `repos`; `unknown` if unresolved |
+| `workspace_kind` | Match logic | `code_workspace`, `folder`, `unknown` |
+
+**Conditional** (tag omitted when value unavailable):
+
+| Tag | Source | Possible values |
+|-----|--------|-----------------|
+| `model_variant` | `model` field on `afterAgentThought` cache | Routing slug (open set), e.g. `composer-2.5-fast` |
+| `model_fast` | `model_params` (`id: fast`) on `afterAgentThought` | `true`, `false` |
+| `cursor_version` | `stop` payload or session cache | Cursor semver, e.g. `3.14.7` (grows with app updates) |
+
+**Not emitted** (high cardinality or redundant):
+
+- `conversation_id`, `generation_id`, `transcript_path`, `user_email`
+- `source` (metric name `{prefix}cursor.llm.tokens` already scopes to Cursor)
+
+**Series count (rough):** `(models) x (composer_mode) x (workspace_id) x (token_types ~5) x [model_variant] x [model_fast] x [cursor_version]`.
+
 ## Config
 
 File: **`~/.cursor-usage-exporter/config.yaml`**
@@ -130,8 +164,8 @@ Created on first hook run under `~/.cursor-usage-exporter/`:
 | File | Purpose |
 |------|---------|
 | `state.db` | Dedup by `generation_id` (avoid double-counting on hook retry) |
-| `model-cache.json` | Auto model name from `afterAgentThought` |
-| `session-context.json` | Session metadata cache |
+| `model-cache.json` | Auto model name / variant from `afterAgentThought` |
+| `session-context.json` | `composer_mode` and workspace cache from `beforeSubmitPrompt` / `sessionStart` |
 | `config.yaml` | Your secrets and prefix |
 
 No chat text is stored.

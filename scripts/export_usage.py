@@ -291,6 +291,17 @@ def save_model_cache(cache: dict[str, Any]) -> None:
     )
 
 
+def model_fast_from_params(model_params: Any) -> bool | None:
+    if not isinstance(model_params, list):
+        return None
+    for item in model_params:
+        if not isinstance(item, dict) or item.get("id") != "fast":
+            continue
+        value = str(item.get("value", "true")).lower()
+        return value in {"true", "1", "yes"}
+    return None
+
+
 def cache_model_from_payload(payload: dict[str, Any]) -> None:
     generation_id = payload.get("generation_id")
     model_id = payload.get("model_id") or payload.get("model")
@@ -298,13 +309,26 @@ def cache_model_from_payload(payload: dict[str, Any]) -> None:
         return
 
     base_id = generation_base_id(str(generation_id))
-    cache = load_model_cache()
-    cache[base_id] = {
+    entry: dict[str, Any] = {
         "model_id": str(model_id),
         "model": str(payload.get("model") or model_id),
         "cached_at": time.time(),
     }
+    model_fast = model_fast_from_params(payload.get("model_params"))
+    if model_fast is not None:
+        entry["model_fast"] = model_fast
+
+    cache = load_model_cache()
+    cache[base_id] = entry
     save_model_cache(cache)
+
+
+def cached_generation_entry(payload: dict[str, Any]) -> dict[str, Any]:
+    generation_id = payload.get("generation_id")
+    if not generation_id:
+        return {}
+    cached = load_model_cache().get(generation_base_id(str(generation_id)), {})
+    return cached if isinstance(cached, dict) else {}
 
 
 def resolve_model(payload: dict[str, Any]) -> str:
@@ -312,13 +336,32 @@ def resolve_model(payload: dict[str, Any]) -> str:
     if model_id and model_id != "default":
         return str(model_id)
 
-    generation_id = payload.get("generation_id")
-    if not generation_id:
-        return "unknown"
-
-    cached = load_model_cache().get(generation_base_id(str(generation_id)), {})
+    cached = cached_generation_entry(payload)
     resolved = cached.get("model_id") or cached.get("model")
     return str(resolved) if resolved else "unknown"
+
+
+def resolve_model_variant(payload: dict[str, Any]) -> str:
+    cached = cached_generation_entry(payload)
+    variant = cached.get("model")
+    if variant and variant != "default":
+        return str(variant)
+
+    model = payload.get("model")
+    if model and model != "default":
+        return str(model)
+    return "unknown"
+
+
+def resolve_model_fast(payload: dict[str, Any]) -> str | None:
+    cached = cached_generation_entry(payload)
+    if "model_fast" in cached:
+        return "true" if cached["model_fast"] else "false"
+
+    model_fast = model_fast_from_params(payload.get("model_params"))
+    if model_fast is None:
+        return None
+    return "true" if model_fast else "false"
 
 
 def cache_session_context(payload: dict[str, Any]) -> None:
@@ -409,7 +452,13 @@ def build_metric_series(
     metric_name = f"{config['metric_prefix']}{DEFAULT_METRIC_SUFFIX}"
     ts = int(time.time())
     model = slug_tag(resolve_model(payload))
-    composer_mode = slug_tag(str(payload.get("composer_mode") or ctx.get("composer_mode") or "unknown"))
+    model_variant = slug_tag(resolve_model_variant(payload))
+    composer_mode = slug_tag(
+        str(payload.get("composer_mode") or ctx.get("composer_mode") or "unknown")
+    )
+    cursor_version = slug_tag(
+        str(payload.get("cursor_version") or ctx.get("cursor_version") or "unknown")
+    )
     workspace_id = slug_tag(str(ctx.get("workspace_id") or "unknown"))
     workspace_name = slug_tag(str(ctx.get("workspace_name") or "unknown"))
     workspace_kind = slug_tag(str(ctx.get("workspace_kind") or "unknown"))
@@ -420,8 +469,14 @@ def build_metric_series(
         f"workspace_id:{workspace_id}",
         f"workspace_name:{workspace_name}",
         f"workspace_kind:{workspace_kind}",
-        "source:cursor",
     ]
+    if model_variant != "unknown":
+        base_tags.append(f"model_variant:{model_variant}")
+    model_fast = resolve_model_fast(payload)
+    if model_fast is not None:
+        base_tags.append(f"model_fast:{model_fast}")
+    if cursor_version != "unknown":
+        base_tags.append(f"cursor_version:{cursor_version}")
 
     series: list[dict[str, Any]] = []
     for token_type, value in tokens.items():
@@ -482,9 +537,28 @@ def handle_session_start(payload: dict[str, Any]) -> None:
     cache_session_context(payload)
 
 
+def handle_before_submit_prompt(payload: dict[str, Any]) -> None:
+    ensure_state_db()
+    cache_session_context(payload)
+
+
 def handle_after_agent_thought(payload: dict[str, Any]) -> None:
     ensure_state_db()
     cache_model_from_payload(payload)
+
+
+def enrich_stop_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Stop hook omits composer_mode; backfill from per-conversation cache."""
+    enriched = dict(payload)
+    conversation_id = enriched.get("conversation_id") or enriched.get("session_id") or ""
+    session_ctx = load_session_context(conversation_id)
+    for key in ("composer_mode", "cursor_version"):
+        if not enriched.get(key) and session_ctx.get(key):
+            enriched[key] = session_ctx[key]
+    if not enriched.get("composer_mode"):
+        # Token usage on stop is Agent turns in practice.
+        enriched["composer_mode"] = "agent"
+    return enriched
 
 
 def handle_stop(payload: dict[str, Any]) -> None:
@@ -495,12 +569,13 @@ def handle_stop(payload: dict[str, Any]) -> None:
     if already_sent(generation_id):
         return
 
-    conversation_id = payload.get("conversation_id") or payload.get("session_id") or ""
+    payload = enrich_stop_payload(payload)
     roots = payload.get("workspace_roots") or []
     ctx = resolve_workspace(roots)
-    session_ctx = load_session_context(conversation_id)
-    if not payload.get("composer_mode") and session_ctx.get("composer_mode"):
-        ctx["composer_mode"] = session_ctx["composer_mode"]
+    if payload.get("composer_mode"):
+        ctx["composer_mode"] = payload["composer_mode"]
+    if payload.get("cursor_version"):
+        ctx["cursor_version"] = payload["cursor_version"]
 
     config = load_config()
     if not config["metric_prefix"]:
@@ -521,7 +596,8 @@ def handle_stop(payload: dict[str, Any]) -> None:
 def main() -> int:
     if len(sys.argv) != 2:
         print(
-            "usage: export_usage.py <session-start|after-agent-thought|stop>",
+            "usage: export_usage.py "
+            "<session-start|before-submit-prompt|after-agent-thought|stop>",
             file=sys.stderr,
         )
         return 2
@@ -532,6 +608,8 @@ def main() -> int:
     try:
         if command == "session-start":
             handle_session_start(payload)
+        elif command == "before-submit-prompt":
+            handle_before_submit_prompt(payload)
         elif command == "after-agent-thought":
             handle_after_agent_thought(payload)
         elif command == "stop":
