@@ -68,6 +68,8 @@ Environment variables override the file. Changing config does not require Reload
 
 Zero buckets are not sent.
 
+Provider billing uses different rates per bucket; long Agent sessions often accumulate large `cache_read` counts without linear cost growth. Compare `cache_read` to `non_cached_input` and `output` when interpreting charts.
+
 More queries:
 
 ```text
@@ -96,6 +98,8 @@ Enabling `CONVERSATION_ID_TAG` adds one tag dimension per chat and increases cus
 ### Conversation start events (opt-in)
 
 Set `CONVERSATION_START_EVENTS: true` in `~/.cursor-usage-exporter/config.yaml` to post a Datadog Event titled **New Cursor Conversation** on the first `beforeSubmitPrompt` for each chat UUID. Events reuse the same context tags as metrics (`model`, `workspace_*`, `composer_mode`, `cursor_version`, `conversation_id`, etc.) plus `source:cursor-usage-exporter` and `event_type:new_conversation`. Enable **Events** overlay on token metric charts to see vertical markers at conversation boundaries. Events do not increase custom metric cardinality.
+
+Note: a chat you resume long after enabling may still emit an event if Cursor created it after you enabled the flag and you had not sent a prompt in it yet.
 
 ## Dry-run
 

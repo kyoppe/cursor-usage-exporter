@@ -68,7 +68,7 @@ METRIC_PREFIX: "your_namespace."
 
 0 のバケットは送信しません。
 
-その他のクエリ例:
+課金は bucket ごとに単価が異なります。長い Agent セッションでは `cache_read` が大きくなっても、コストが token 数に比例して線形に増えるとは限りません。グラフでは `cache_read` と `non_cached_input` / `output` を合わせて見てください。
 
 ```text
 sum:your.prefix.cursor.llm.tokens{*} by {token_type}.rollup(sum, 3600)
@@ -96,6 +96,8 @@ cumsum(sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600))
 ### 会話開始イベント (任意)
 
 `~/.cursor-usage-exporter/config.yaml` で `CONVERSATION_START_EVENTS: true` にすると、各 Chat UUID の初回 `beforeSubmitPrompt` で **New Cursor Conversation** という Datadog Event を送ります。タグはメトリクスと同じコンテキスト (`model`, `workspace_*`, `composer_mode`, `cursor_version`, `conversation_id` など) に加え `source:cursor-usage-exporter`, `event_type:new_conversation` です。トークンメトリクスのグラフで **Events** オーバーレイを有効にすると、会話の境目が縦線ピンとして表示されます。Event はカスタムメトリクスのカーディナリティを増やしません。
+
+注: 有効化後に Cursor 上で作成された Chat を、初回プロンプトまで長期間放置してから再開した場合など、新規 Event として表示されることがあります。
 
 ## Dry-run
 
