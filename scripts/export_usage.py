@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 DEFAULT_METRIC_SUFFIX = "cursor.llm.tokens"
+CONVERSATION_START_EVENT_TITLE = "New Cursor Conversation"
 STATE_DIR = Path.home() / ".cursor-usage-exporter"
 CONFIG_YAML = STATE_DIR / "config.yaml"
 CONFIG_JSON = STATE_DIR / "config.json"
@@ -112,6 +113,10 @@ def load_config() -> dict[str, str]:
     conversation_id_tag = parse_bool(
         os.environ.get("CONVERSATION_ID_TAG") or file_cfg.get("CONVERSATION_ID_TAG")
     )
+    conversation_start_events = parse_bool(
+        os.environ.get("CONVERSATION_START_EVENTS")
+        or file_cfg.get("CONVERSATION_START_EVENTS")
+    )
 
     return {
         "metric_prefix": prefix,
@@ -119,6 +124,7 @@ def load_config() -> dict[str, str]:
         "dd_api_key": api_key,
         "dry_run": dry_run,
         "conversation_id_tag": conversation_id_tag,
+        "conversation_start_events": conversation_start_events,
     }
 
 
@@ -130,6 +136,14 @@ def ensure_state_db() -> None:
             CREATE TABLE IF NOT EXISTS sent_generations (
                 generation_id TEXT PRIMARY KEY,
                 sent_at REAL NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS seen_conversations (
+                conversation_id TEXT PRIMARY KEY,
+                first_seen_at REAL NOT NULL
             )
             """
         )
@@ -152,6 +166,17 @@ def mark_sent(generation_id: str) -> None:
             (generation_id, time.time()),
         )
         conn.commit()
+
+
+def try_mark_conversation_seen(conversation_id: str) -> bool:
+    """Return True when conversation_id is newly recorded."""
+    with sqlite3.connect(STATE_DB) as conn:
+        cur = conn.execute(
+            "INSERT OR IGNORE INTO seen_conversations(conversation_id, first_seen_at) VALUES (?, ?)",
+            (conversation_id, time.time()),
+        )
+        conn.commit()
+        return cur.rowcount > 0
 
 
 def read_stdin_json() -> dict[str, Any]:
@@ -446,15 +471,16 @@ def token_points(payload: dict[str, Any]) -> dict[str, int]:
     return out
 
 
-def build_metric_series(
-    payload: dict[str, Any], ctx: dict[str, Any], config: dict[str, str]
-) -> list[dict[str, Any]]:
-    tokens = token_points(payload)
-    if not tokens:
-        return []
+def build_common_tags(
+    payload: dict[str, Any],
+    ctx: dict[str, Any],
+    config: dict[str, str],
+    *,
+    include_conversation_id: bool | None = None,
+) -> list[str]:
+    if include_conversation_id is None:
+        include_conversation_id = bool(config.get("conversation_id_tag"))
 
-    metric_name = f"{config['metric_prefix']}{DEFAULT_METRIC_SUFFIX}"
-    ts = int(time.time())
     model = slug_tag(resolve_model(payload))
     model_variant = slug_tag(resolve_model_variant(payload))
     composer_mode = slug_tag(
@@ -467,7 +493,7 @@ def build_metric_series(
     workspace_name = slug_tag(str(ctx.get("workspace_name") or "unknown"))
     workspace_kind = slug_tag(str(ctx.get("workspace_kind") or "unknown"))
 
-    base_tags = [
+    tags = [
         f"model:{model}",
         f"composer_mode:{composer_mode}",
         f"workspace_id:{workspace_id}",
@@ -475,16 +501,29 @@ def build_metric_series(
         f"workspace_kind:{workspace_kind}",
     ]
     if model_variant != "unknown":
-        base_tags.append(f"model_variant:{model_variant}")
+        tags.append(f"model_variant:{model_variant}")
     model_fast = resolve_model_fast(payload)
     if model_fast is not None:
-        base_tags.append(f"model_fast:{model_fast}")
+        tags.append(f"model_fast:{model_fast}")
     if cursor_version != "unknown":
-        base_tags.append(f"cursor_version:{cursor_version}")
-    if config.get("conversation_id_tag"):
+        tags.append(f"cursor_version:{cursor_version}")
+    if include_conversation_id:
         conversation_id = payload.get("conversation_id") or payload.get("session_id")
         if conversation_id:
-            base_tags.append(f"conversation_id:{slug_tag(str(conversation_id))}")
+            tags.append(f"conversation_id:{slug_tag(str(conversation_id))}")
+    return tags
+
+
+def build_metric_series(
+    payload: dict[str, Any], ctx: dict[str, Any], config: dict[str, str]
+) -> list[dict[str, Any]]:
+    tokens = token_points(payload)
+    if not tokens:
+        return []
+
+    metric_name = f"{config['metric_prefix']}{DEFAULT_METRIC_SUFFIX}"
+    ts = int(time.time())
+    base_tags = build_common_tags(payload, ctx, config)
 
     series: list[dict[str, Any]] = []
     for token_type, value in tokens.items():
@@ -540,6 +579,96 @@ def submit_metrics(series: list[dict[str, Any]], config: dict[str, str]) -> None
         )
 
 
+def submit_conversation_start_event(
+    conversation_id: str, tags: list[str], config: dict[str, str]
+) -> None:
+    body = {
+        "title": CONVERSATION_START_EVENT_TITLE,
+        "text": f"conversation_id: {conversation_id}",
+        "tags": tags,
+        "alert_type": "info",
+        "source_type_name": "cursor",
+        "aggregation_key": "cursor-usage-exporter",
+    }
+    if config["dry_run"]:
+        print(json.dumps({"dry_run": True, "event": body}, ensure_ascii=False))
+        return
+
+    api_key = config["dd_api_key"]
+    if not api_key:
+        print(
+            "cursor-usage-exporter: DD_API_KEY not set; skipping conversation start event",
+            file=sys.stderr,
+        )
+        return
+
+    url = f"https://api.{config['dd_site']}/api/v1/events"
+    req = urllib.request.Request(
+        url,
+        data=json.dumps(body).encode("utf-8"),
+        method="POST",
+        headers={
+            "Content-Type": "application/json",
+            "DD-API-KEY": api_key,
+        },
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=5) as resp:
+            resp.read()
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        print(
+            f"cursor-usage-exporter: Datadog Events API error {exc.code}: {detail}",
+            file=sys.stderr,
+        )
+
+
+def merge_workspace_context(
+    payload: dict[str, Any], ctx: dict[str, Any], conversation_id: str
+) -> dict[str, Any]:
+    merged = dict(ctx)
+    session_ctx = load_session_context(conversation_id)
+    for key in (
+        "composer_mode",
+        "cursor_version",
+        "workspace_id",
+        "workspace_name",
+        "workspace_kind",
+    ):
+        if payload.get(key):
+            merged[key] = payload[key]
+        elif not merged.get(key) or merged.get(key) == "unknown":
+            if session_ctx.get(key):
+                merged[key] = session_ctx[key]
+    return merged
+
+
+def maybe_emit_conversation_start_event(
+    payload: dict[str, Any], config: dict[str, str]
+) -> None:
+    if not config.get("conversation_start_events"):
+        return
+
+    conversation_id = payload.get("conversation_id") or payload.get("session_id")
+    if not conversation_id:
+        return
+
+    conv_id = str(conversation_id)
+    if not try_mark_conversation_seen(conv_id):
+        return
+
+    roots = payload.get("workspace_roots") or []
+    ctx = merge_workspace_context(payload, resolve_workspace(roots), conv_id)
+    tags = build_common_tags(payload, ctx, config, include_conversation_id=True)
+    tags.extend(
+        [
+            "source:cursor-usage-exporter",
+            "event_type:new_conversation",
+        ]
+    )
+    submit_conversation_start_event(conv_id, tags, config)
+
+
 def handle_session_start(payload: dict[str, Any]) -> None:
     ensure_state_db()
     cache_session_context(payload)
@@ -548,6 +677,7 @@ def handle_session_start(payload: dict[str, Any]) -> None:
 def handle_before_submit_prompt(payload: dict[str, Any]) -> None:
     ensure_state_db()
     cache_session_context(payload)
+    maybe_emit_conversation_start_event(payload, load_config())
 
 
 def handle_after_agent_thought(payload: dict[str, Any]) -> None:

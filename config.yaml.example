@@ -8,3 +8,7 @@ METRIC_PREFIX: "your_namespace."
 
 # Optional: tag metrics with Cursor chat UUID (increases Datadog cardinality).
 # CONVERSATION_ID_TAG: true
+
+# Optional: emit a Datadog Event when a new chat starts (beforeSubmitPrompt).
+# Overlays as a pin on metric charts. Does not increase custom metric cardinality.
+# CONVERSATION_START_EVENTS: true

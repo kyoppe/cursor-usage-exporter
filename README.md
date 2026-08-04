@@ -92,17 +92,23 @@ Tag values are slugified (special characters become `_`).
 
 Enabling `CONVERSATION_ID_TAG` adds one tag dimension per chat and increases custom metric cardinality.
 
+### Conversation start events (opt-in)
+
+Set `CONVERSATION_START_EVENTS: true` in `~/.cursor-usage-exporter/config.yaml` to post a Datadog Event titled **New Cursor Conversation** on the first `beforeSubmitPrompt` for each chat UUID. Events reuse the same context tags as metrics (`model`, `workspace_*`, `composer_mode`, `cursor_version`, `conversation_id`, etc.) plus `source:cursor-usage-exporter` and `event_type:new_conversation`. Enable **Events** overlay on token metric charts to see vertical markers at conversation boundaries. Events do not increase custom metric cardinality.
+
 ## Dry-run
 
 ```bash
 export CURSOR_USAGE_DRY_RUN=1
+echo '{"conversation_id":"conv-new","composer_mode":"agent","cursor_version":"3.14.7","workspace_roots":["/tmp/repo"]}' \
+  | python3 scripts/export_usage.py before-submit-prompt
 echo '{"generation_id":"test-1","model_id":"default","input_tokens":100,"output_tokens":20,"cache_read_tokens":50,"workspace_roots":["/tmp/repo"],"conversation_id":"conv-1"}' \
   | python3 scripts/export_usage.py stop
 ```
 
 ## Local state
 
-Under `~/.cursor-usage-exporter/` (created on first hook run): `config.yaml`, `state.db` (dedup), `model-cache.json`, `session-context.json`. No chat text is stored.
+Under `~/.cursor-usage-exporter/` (created on first hook run): `config.yaml`, `state.db` (dedup for generations and seen conversations), `model-cache.json`, `session-context.json`. No chat text is stored.
 
 ## Datadog cost (reference)
 

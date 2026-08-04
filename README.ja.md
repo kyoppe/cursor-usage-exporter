@@ -92,17 +92,23 @@ cumsum(sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600))
 
 `CONVERSATION_ID_TAG` を有効にすると Chat ごとにタグ次元が増え、カスタムメトリクスのカーディナリティが上がります。
 
+### 会話開始イベント (任意)
+
+`~/.cursor-usage-exporter/config.yaml` で `CONVERSATION_START_EVENTS: true` にすると、各 Chat UUID の初回 `beforeSubmitPrompt` で **New Cursor Conversation** という Datadog Event を送ります。タグはメトリクスと同じコンテキスト (`model`, `workspace_*`, `composer_mode`, `cursor_version`, `conversation_id` など) に加え `source:cursor-usage-exporter`, `event_type:new_conversation` です。トークンメトリクスのグラフで **Events** オーバーレイを有効にすると、会話の境目が縦線ピンとして表示されます。Event はカスタムメトリクスのカーディナリティを増やしません。
+
 ## Dry-run
 
 ```bash
 export CURSOR_USAGE_DRY_RUN=1
+echo '{"conversation_id":"conv-new","composer_mode":"agent","cursor_version":"3.14.7","workspace_roots":["/tmp/repo"]}' \
+  | python3 scripts/export_usage.py before-submit-prompt
 echo '{"generation_id":"test-1","model_id":"default","input_tokens":100,"output_tokens":20,"cache_read_tokens":50,"workspace_roots":["/tmp/repo"],"conversation_id":"conv-1"}' \
   | python3 scripts/export_usage.py stop
 ```
 
 ## ローカル状態
 
-`~/.cursor-usage-exporter/` (初回 Hook 実行時に作成): `config.yaml`, `state.db` (重複排除), `model-cache.json`, `session-context.json`。チャット本文は保存しません。
+`~/.cursor-usage-exporter/` (初回 Hook 実行時に作成): `config.yaml`, `state.db` (generation / 会話の重複排除), `model-cache.json`, `session-context.json`。チャット本文は保存しません。
 
 ## Datadog コスト (参考)
 
