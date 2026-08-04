@@ -1,5 +1,7 @@
 # cursor-usage-exporter
 
+**Languages:** [English](README.md) | [日本語](README.ja.md)
+
 Send **Cursor Agent token usage** to **Datadog custom metrics** via Cursor Hooks.
 
 ## Prerequisites
@@ -33,8 +35,6 @@ Datadog Metrics Explorer:
 sum:your.prefix.cursor.llm.tokens{*}.rollup(sum, 3600)
 ```
 
-(Sum all `token_type` series; buckets are non-overlapping.)
-
 Uninstall: `python3 scripts/cursor-install.py uninstall`, then Reload Window.
 
 ## Config
@@ -56,8 +56,6 @@ Environment variables override the file. Changing config does not require Reload
 | `{prefix}cursor.llm.tokens` | count | `model`, `model_variant`, `model_fast`, `token_type`, `workspace_id`, `workspace_name`, `workspace_kind`, `composer_mode`, `cursor_version` |
 
 ### `token_type`
-
-Non-overlapping buckets. **Volume = sum all `token_type` values** (do not filter to one).
 
 | Value | Meaning |
 |-------|---------|
